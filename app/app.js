@@ -1,15 +1,16 @@
 import {App, IonicApp, Config} from 'ionic/ionic';
 import {ConferenceData} from './providers/conference-data';
 import {UserData} from './providers/user-data';
+import {IcwsData} from './providers/icws-data';
+import {Icws} from './providers/icws';
 import {TabsPage} from './pages/tabs/tabs';
 import {LoginPage} from './pages/login/login';
 import {SignupPage} from './pages/signup/signup';
 import {TutorialPage} from './pages/tutorial/tutorial';
 
-
 @App({
   templateUrl: 'build/app.html',
-  providers: [ConferenceData, UserData]
+  providers: [ConferenceData, UserData, Icws, IcwsData]
 })
 class ConferenceApp {
   constructor(app: IonicApp, confData: ConferenceData, config: Config) {

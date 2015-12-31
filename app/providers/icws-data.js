@@ -1,0 +1,26 @@
+import {Injectable} from 'angular2/core';
+
+
+@Injectable()
+export class IcwsData {
+
+  constructor() {
+    this._favorites = [];
+  }
+
+  hasFavorite(sessionName) {
+    return (this._favorites.indexOf(sessionName) > -1);
+  }
+
+  addFavorite(sessionName) {
+    this._favorites.push(sessionName);
+  }
+
+  removeFavorite(sessionName) {
+    let index = this._favorites.indexOf(sessionName)
+    if (index > -1) {
+      this._favorites.splice(index, 1);
+    }
+  }
+
+}
