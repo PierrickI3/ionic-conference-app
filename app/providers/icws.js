@@ -48,6 +48,7 @@ export class Icws {
     this.ICWS.URI_SCHEME = uriScheme;
     this.ICWS.URI_SERVER = server;
     this.ICWS.URI_PORT = port;
+    this.ICWS.connected = false;
 
     // return new Promise(resolve => {
     //   // We're using Angular Http provider to request the data,
@@ -65,94 +66,96 @@ export class Icws {
     // });
   }
 
-  query(method, requestPath, options, successcallback, errorcallback) {
-    console.debug('ICWS.query:', method, requestPath, JSON.stringify(options));
+  query(method, requestPath, payload) {
+    var ICWS = this.ICWS;
+    var http = this.http;
+    return new Promise(function(resolve, reject) {
+      console.debug('Query:' + method + ' ' + requestPath);
 
-    // Validate parameters
-    if (!method)
-    {
-      console.error('Missing method');
-      throw new Error('Missing method');
-    }
+      // Validate parameters
+      if (!method)
+      {
+        console.error('Missing method');
+        reject(Error('Missing method'));
+      }
 
-    if (!requestPath)
-    {
-      console.error('Missing requestPath');
-      throw new Error('Missing requestPath');
-    }
+      if (!requestPath)
+      {
+        console.error('Missing requestPath');
+        reject(Error('Missing requestPath'));
+      }
 
-    if (options.connected == undefined) {
-      options.connected = this.ICWS.csrfToken ? true: false;
-    }
+      // Already connected?
+      var connected = ICWS.csrfToken ? true: false;
+      console.debug('Connected? ' + connected);
 
-    // Create the base URI, using the ICWS port, with the specified server and session ID.
-    var uri = this.ICWS.URI_PATH;
-    if (options.connected) {
-      uri += '/' + this.ICWS.sessionId;
-    }
-    if (requestPath.substring(0, 1) !== '/') {
-      uri += '/';
-    }
-    uri += requestPath;
+      var headers = {};
 
-    // Allow JSON to be provided as an option, then convert it to a string.
-    var payload = options ? options.payload : null;
-    if (typeof payload !== 'string' && !(payload instanceof String)) {
-      payload = JSON.stringify(payload);
-    }
+      // URI and Headers
+      var uri = ICWS.URI_PATH;
+      if (connected) {
+        headers['ININ-ICWS-CSRF-Token'] = ICWS.csrfToken;
+        headers['ININ-ICWS-Session-ID'] = ICWS.sessionId;
+        headers['Cookie'] = ICWS.cookie;
+        uri += '/' + ICWS.sessionId;
+      }
+      else {
+        headers['Accept-Language'] = 'en';
+      }
+      if (requestPath.substring(0, 1) !== '/') {
+        uri += '/';
+      }
+      uri += requestPath;
 
-    var httpOptions = {
-      url: this.ICWS.URI_SCHEME + this.ICWS.URI_SERVER + ':' + this.ICWS.URI_PORT + uri,
-      method: method,
-      withCredentials: false,
-      headers: {}
-    };
+      // Convert payload to string if JSON was sent
+      if(typeof payload !== 'string' && !(payload instanceof String)) {
+        payload = JSON.stringify(payload);
+      }
 
-    if (payload) {
-      httpOptions.headers['Content-Type'] = this.ICWS.MEDIA_TYPE + ';' + this.ICWS.MEDIA_CHARSET;
-      httpOptions.headers['Content-Length'] = payload.length;
-    }
+      // Payload headers
+      if (payload) {
+        headers['Content-Type'] = ICWS.MEDIA_TYPE + ';' + ICWS.MEDIA_CHARSET;
+        headers['Content-Length'] = payload.length;
+      }
 
-    // If the ICWS request is for an existing session, then the session's CSRF token must be set as
-    // a header parameter. This is not provided when establishing the initial connection.
-    if (options.connected) {
-      httpOptions.headers['ININ-ICWS-CSRF-Token'] = this.ICWS.csrfToken;
-      httpOptions.headers['ININ-ICWS-Session-ID'] = this.ICWS.sessionId;
-      httpOptions.headers['Cookie'] = this.ICWS.cookie;
-    }
-    else {
-      httpOptions.headers['Accept-Language'] = 'en';
-    }
+      // Build request
+      var request = new Request({
+        url: ICWS.URI_SCHEME + ICWS.URI_SERVER + ':' + ICWS.URI_PORT + uri,
+        method: method,
+        headers: headers,
+        body: payload,
+        withCredentials: false
+      });
+      console.debug('Request:' + JSON.stringify(request));
 
-    console.debug('httpOptions:', JSON.stringify(httpOptions));
-
-    this.http.request(new Request({
-      method: httpOptions.method,
-      headers: httpOptions.headers,
-      url: httpOptions.url,
-      body: payload,
-      withCredentials: false
-    }))
-    .subscribe(res => {
-      this.resolve(res, successcallback, errorcallback);
-    },
-    error => {
-      console.error('Error with http.request:', JSON.stringify(error));
-      this.resolve(error, successcallback, errorcallback);
+      // We're using Angular Http provider to request the data,
+      // Next we process the data and resolve the promise with the new data.
+      http.request(request)
+      .subscribe(res => {
+        //this.data = this.processData(res.json());
+        resolve(res);
+      }, error => {
+        console.error('Query Error:', error);
+        if (error._body.type === 'error') {
+          reject('Unknown server');
+        } else {
+          reject(JSON.stringify(error));
+        }
+      });
     });
   }
 
-  resolve(data, successcallback, errorcallback) {
+  resolveold(data, successcallback, errorcallback) {
     console.log('status:', data.status);
     console.debug('headers:', JSON.stringify(data.headers));
-
-    data.setEncoding('utf8');
 
     switch (data.status) {
       case 200: // OK
         console.debug('Ok');
-        if (successcallback)
+        //TODO Could be a DNS lookup issue
+        if (successcallback) {
           successcallback(data.status, data.message);
+        }
         break;
       case 201: // Created
         console.debug('Connected');
@@ -245,32 +248,27 @@ export class Icws {
     }
   }
 
-  login(username, password, successcallback, errorcallback) {
-
+  login(username, password) {
     // Validate parameters
     if (!username) {
       console.error('Missing username');
-      throw new Error('Missing username');
+      reject(Error('Missing username'));
     }
 
     if (!password) {
       console.error('Missing password');
-      throw new Error('Missing password');
+      reject(Error('Missing password'));
     }
 
-    // GO!
+    var payload = {
+      "__type": "urn:inin.com:connection:icAuthConnectionRequestSettings",
+      "applicationName": this.ICWS.applicationName,
+      "userID": username,
+      "password": password
+    }
+
     console.debug('Connecting to CIC');
-    var loginRequestOptions = {
-      connected: false,
-      payload: {
-        "__type": "urn:inin.com:connection:icAuthConnectionRequestSettings",
-        "applicationName": this.ICWS.applicationName,
-        "userID": username,
-        "password": password
-      }
-    }
-
-    this.query('POST', this.ICWS.URL.Connection, loginRequestOptions, successcallback, errorcallback);
+    return this.query('POST', this.ICWS.URL.Connection, payload);
   }
 
   processData(data) {
